@@ -88,6 +88,11 @@ type ConnMap = HashMap<i32, ConnInner>;
 pub struct ConnectionMeta {
     pub control_permissions: Option<ControlPermissions>,
     pub controlled_context: Option<ControlledContext>,
+    /// A resource permit the answerer path attaches to a WebRTC connection so it stays counted
+    /// until RustDesk's own authentication, not merely until the data channel opens. Type-erased
+    /// so this shared struct need not know the answerer's slot type; opaque everywhere else, it is
+    /// only carried and dropped. `None` on every other transport.
+    pub webrtc_pre_auth_hold: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
