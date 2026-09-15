@@ -264,6 +264,9 @@ pub struct Connection {
     port_forward_address: String,
     tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
     authorized: bool,
+    // Held for a WebRTC answerer until authorization, then dropped to free its resource slot;
+    // see ConnectionMeta::webrtc_pre_auth_hold. None on every other transport.
+    webrtc_pre_auth_hold: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     require_2fa: Option<totp_rs::TOTP>,
     awaiting_2fa: bool,
     keyboard: bool,
@@ -423,6 +426,7 @@ impl Connection {
         let super::ConnectionMeta {
             control_permissions,
             controlled_context,
+            webrtc_pre_auth_hold,
         } = meta;
         // Android is not supported yet, so we always set control_permissions to None.
         #[cfg(target_os = "android")]
@@ -477,6 +481,7 @@ impl Connection {
             port_forward_address: "".to_owned(),
             tx_to_cm,
             authorized: false,
+            webrtc_pre_auth_hold,
             keyboard: Self::permission(keys::OPTION_ENABLE_KEYBOARD, &control_permissions),
             clipboard: Self::permission(keys::OPTION_ENABLE_CLIPBOARD, &control_permissions),
             audio: Self::permission(keys::OPTION_ENABLE_AUDIO, &control_permissions),
@@ -1761,6 +1766,9 @@ impl Connection {
             return false;
         }
         self.authorized = true;
+        // The peer is authenticated now, so release any WebRTC pre-auth resource slot; a no-op
+        // on other transports.
+        self.webrtc_pre_auth_hold = None;
         // Releases the budget `check_id_whitelist` charges against this address: only a peer
         // that got this far proved more than a self-reported id.
         self.clear_id_whitelist_failures();

@@ -3,7 +3,7 @@ use std::{
     hash::BuildHasher,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, RwLock,
     },
     time::{Duration, Instant},
@@ -46,6 +46,7 @@ fn connection_meta(
     ConnectionMeta {
         control_permissions,
         controlled_context,
+        webrtc_pre_auth_hold: None,
     }
 }
 
@@ -63,6 +64,33 @@ const MAX_PENDING_REMOTE_ICE: usize = 64;
 /// Queued candidates remembered so the controller's re-send is skipped instead of taking a slot
 /// of its own. Far more than an honest peer gathers, at eight bytes each.
 const ICE_DEDUP_WINDOW: usize = 256;
+/// Answerers between an offer and an open data channel. An offer arrives before any password or
+/// accept prompt, and each one builds a peer connection that binds a socket per interface and
+/// runs ICE for up to `CONNECT_TIMEOUT`, where a forged TCP punch costs one connect. Past this
+/// many the offer is declined, and the controller carries on over punch and relay as it does
+/// for a peer without WebRTC.
+const MAX_WEBRTC_ANSWERERS: usize = 8;
+static WEBRTC_ANSWERERS: AtomicUsize = AtomicUsize::new(0);
+
+/// One of the `MAX_WEBRTC_ANSWERERS` slots, given back on drop.
+struct AnswererSlot;
+
+impl AnswererSlot {
+    fn take() -> Option<Self> {
+        WEBRTC_ANSWERERS
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < MAX_WEBRTC_ANSWERERS).then(|| n + 1)
+            })
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for AnswererSlot {
+    fn drop(&mut self) {
+        WEBRTC_ANSWERERS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 // The rendezvous ICE route is reachable without a prior punch and the peer decides how many
 // candidates it sends, so these sites would let someone else set how much this machine writes to
 // its log file. One line a minute each, carrying the suppressed count.
@@ -749,6 +777,15 @@ impl RendezvousMediator {
         peer_addr: SocketAddr,
         meta: ConnectionMeta,
     ) -> ResultType<String> {
+        let Some(slot) = AnswererSlot::take() else {
+            hbb_common::throttled_log!(
+                ICE_LOG_INTERVAL,
+                warn,
+                "declined a WebRTC offer: {} answerers already in flight",
+                MAX_WEBRTC_ANSWERERS
+            );
+            return Ok(String::new());
+        };
         let mut stream =
             WebRTCStream::new(&ph.webrtc_sdp_offer, relay_only_ice, CONNECT_TIMEOUT).await?;
         let answer = stream.local_endpoint().to_owned();
@@ -875,6 +912,13 @@ impl RendezvousMediator {
             // SESSIONS (its state handler only fires on a terminal ICE state, which a cleanly
             // closed session may never reach) leaking the pc, channels, and socket fds.
             let stream_for_cleanup = stream.clone();
+            // A data channel at Open is not yet an authenticated peer: create_tcp_connection still
+            // runs the SignedId/PublicKey handshake, up to CONNECT_TIMEOUT, before the peer proves
+            // who it is. Carry the slot into that connection so a forged offer that opens a channel
+            // and then stalls keeps occupying one until the handshake closes it out, rather than
+            // freeing it here and letting the next batch of eight begin.
+            let mut meta = meta;
+            meta.webrtc_pre_auth_hold = Some(std::sync::Arc::new(slot));
             if let Err(err) = crate::server::create_tcp_connection(
                 server,
                 Stream::WebRTC(stream),
@@ -1488,9 +1532,14 @@ impl Drop for CheckIfResendPk {
 
 #[cfg(test)]
 mod tests {
-    use super::{mpsc, socket_client, tokio, IceRoute, ICE_DEDUP_WINDOW, MAX_PENDING_REMOTE_ICE};
+    use super::{
+        mpsc, socket_client, tokio, AnswererSlot, IceRoute, ICE_DEDUP_WINDOW,
+        MAX_PENDING_REMOTE_ICE, MAX_WEBRTC_ANSWERERS,
+    };
     use hbb_common::tcp::new_listener;
+    use std::any::Any;
     use std::net::SocketAddr;
+    use std::sync::Arc;
 
     // A SOCKS proxy makes `connect_tcp_local` dial the proxy and ignore the local address, so
     // nothing these two assert can hold. Read once, from the same global config production reads.
@@ -1735,5 +1784,37 @@ mod tests {
             until + Duration::from_millis(PUNCH_GRACE),
             "must return when the grace runs out, not a backoff later"
         );
+    }
+
+    // The slot counter is process-global and the test harness runs tests in parallel threads,
+    // so every test that takes slots holds this first; a poisoned lock is still a lock.
+    static SLOT_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn test_answerer_slots_cap_and_release() {
+        let _serial = SLOT_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let held: Vec<_> = (0..MAX_WEBRTC_ANSWERERS)
+            .map(|_| AnswererSlot::take().unwrap())
+            .collect();
+        assert!(AnswererSlot::take().is_none());
+        drop(held);
+        assert!(AnswererSlot::take().is_some());
+    }
+
+    // The answerer hands its slot into the connection type-erased, exactly as it reaches the
+    // authenticated peer; this pins that the erased hold still occupies a slot and that dropping
+    // it — as authorization or a dropped Connection does — is what releases it. If the slot were
+    // freed at data-channel Open instead, this connection could not keep the last one occupied.
+    #[test]
+    fn test_erased_slot_holds_until_dropped() {
+        let _serial = SLOT_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let held: Vec<_> = (0..MAX_WEBRTC_ANSWERERS - 1)
+            .map(|_| AnswererSlot::take().unwrap())
+            .collect();
+        let erased: Arc<dyn Any + Send + Sync> = Arc::new(AnswererSlot::take().unwrap());
+        assert!(AnswererSlot::take().is_none());
+        drop(erased);
+        assert!(AnswererSlot::take().is_some());
+        drop(held);
     }
 }
