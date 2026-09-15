@@ -2373,7 +2373,12 @@ mod desktop {
         pub fn refresh(&mut self) {
             if !self.sid.is_empty() && is_active_and_seat0(&self.sid) {
                 // Xwayland display and xauth may not be available in a short time after login.
-                if is_xwayland_running(&self.uid) && !self.is_login_wayland() {
+                // Avoid scanning processes on X11, where Xwayland discovery cannot provide any
+                // useful session information.
+                if self.is_wayland()
+                    && is_xwayland_running(&self.uid)
+                    && !self.is_login_wayland()
+                {
                     self.get_display_xauth_xwayland();
                 } else if self.is_wayland() {
                     self.get_display_xauth_wayland();
