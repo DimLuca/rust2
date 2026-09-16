@@ -13,6 +13,8 @@ import re
 import subprocess
 import argparse
 import sys
+import json
+import tempfile
 from pathlib import Path
 
 # Captured at import, while cwd is still the repo root: before Python 3.9 the main script's __file__
@@ -53,6 +55,29 @@ def system2(cmd):
     if exit_code != 0:
         sys.stderr.write(f"Error occurred when executing: `{cmd}`. Exiting.\n")
         sys.exit(-1)
+
+
+def create_araquari_ti_dart_defines():
+    """Create a temporary Flutter defines file without printing its values."""
+    values = {
+        key: os.environ.get(key, '')
+        for key in (
+            'ARAQUARI_TI_USERNAME_SHA256',
+            'ARAQUARI_TI_PASSWORD_SHA256',
+        )
+    }
+    configured = [key for key, value in values.items() if value]
+    if configured and len(configured) != len(values):
+        raise Exception('Both Araquari TI credential digests must be configured')
+    if not configured:
+        return None
+    for key, value in values.items():
+        if not re.fullmatch(r'[0-9a-fA-F]{64}', value):
+            raise Exception(f'{key} must be a SHA-256 digest')
+    with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', encoding='utf-8', delete=False) as fh:
+        json.dump(values, fh)
+        return fh.name
 
 
 def get_version():
@@ -933,7 +958,14 @@ def build_flutter_windows(version, features, skip_portable_pack):
             print("cargo build failed, please check rust source code.")
             exit(-1)
     os.chdir('flutter')
-    system2('flutter build windows --release')
+    defines_path = create_araquari_ti_dart_defines()
+    try:
+        defines_arg = (f' --dart-define-from-file="{defines_path}"'
+                       if defines_path else '')
+        system2(f'flutter build windows --release{defines_arg}')
+    finally:
+        if defines_path:
+            os.unlink(defines_path)
     os.chdir('..')
     shutil.copy2('target/release/deps/dylib_virtual_display.dll',
                  flutter_build_dir_2)

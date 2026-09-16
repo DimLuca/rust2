@@ -77,6 +77,7 @@ dependencies:
   debounce_throttle: ^2.0.0
   file_picker: ^5.1.0
   flutter_svg: ^2.0.5
+  crypto: ^3.0.6
   uni_links:
     git:
       url: https://github.com/rustdesk-org/uni_links

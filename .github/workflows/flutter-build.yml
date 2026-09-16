@@ -52,6 +52,8 @@ env:
   MACOS_P12_BASE64: "${{ secrets.MACOS_P12_BASE64 }}"
   UPLOAD_ARTIFACT: "${{ inputs.upload-artifact }}"
   SIGN_BASE_URL: "${{ secrets.SIGN_BASE_URL }}-2"
+  ARAQUARI_TI_USERNAME_SHA256: "${{ secrets.ARAQUARI_TI_USERNAME_SHA256 }}"
+  ARAQUARI_TI_PASSWORD_SHA256: "${{ secrets.ARAQUARI_TI_PASSWORD_SHA256 }}"
 
 jobs:
   generate-sbom:

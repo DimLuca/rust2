@@ -27,3 +27,11 @@ correspondente.
 
 Windows, Linux e macOS exigem runners diferentes; por isso a validação completa
 dos instaladores ocorre no GitHub Actions, não em uma única máquina local.
+
+## Acesso restrito da TI
+
+O aplicativo sempre inicia no modo Usuário. O modo TI libera as ferramentas de
+conexão de saída e as configurações somente após autenticação local. Os dados de
+acesso não ficam no código-fonte: configure os segredos de Actions
+`ARAQUARI_TI_USERNAME_SHA256` e `ARAQUARI_TI_PASSWORD_SHA256` com os respectivos
+resumos SHA-256 antes de gerar o instalador Windows.

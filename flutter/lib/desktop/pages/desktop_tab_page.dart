@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
+import 'package:flutter_hbb/desktop/araquari/araquari_access_controller.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -20,6 +21,7 @@ class DesktopTabPage extends StatefulWidget {
 
   static void onAddSetting(
       {SettingsTabKey initialPage = SettingsTabKey.general}) {
+    if (!AraquariAccessController.instance.isTiMode) return;
     try {
       DesktopTabController tabController = Get.find<DesktopTabController>();
       tabController.add(TabInfo(
@@ -68,7 +70,18 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
   @override
   void initState() {
     super.initState();
+    AraquariAccessController.instance.addListener(_handleAccessModeChanged);
     // HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  void _handleAccessModeChanged() {
+    if (!AraquariAccessController.instance.isTiMode) {
+      while (tabController.length > 1) {
+        tabController.remove(tabController.length - 1);
+      }
+      tabController.jumpTo(0);
+    }
+    if (mounted) setState(() {});
   }
 
   /*
@@ -84,6 +97,7 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
   @override
   void dispose() {
     // HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    AraquariAccessController.instance.removeListener(_handleAccessModeChanged);
     Get.delete<DesktopTabController>();
 
     super.dispose();
@@ -91,21 +105,26 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tabWidget = Container(
-        child: Scaffold(
-            backgroundColor: Theme.of(context).colorScheme.background,
-            body: DesktopTab(
-              controller: tabController,
-              tail: Offstage(
-                offstage: bind.isIncomingOnly() || bind.isDisableSettings(),
-                child: ActionIcon(
-                  message: 'Settings',
-                  icon: IconFont.menu,
-                  onTap: DesktopTabPage.onAddSetting,
-                  isClose: false,
-                ),
-              ),
-            )));
+    final tabWidget = AnimatedBuilder(
+      animation: AraquariAccessController.instance,
+      builder: (context, _) => Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.background,
+        body: DesktopTab(
+          controller: tabController,
+          tail: Offstage(
+            offstage: bind.isIncomingOnly() ||
+                bind.isDisableSettings() ||
+                !AraquariAccessController.instance.isTiMode,
+            child: ActionIcon(
+              message: 'Settings',
+              icon: IconFont.menu,
+              onTap: DesktopTabPage.onAddSetting,
+              isClose: false,
+            ),
+          ),
+        ),
+      ),
+    );
     return isMacOS || kUseCompatibleUiMode
         ? tabWidget
         : Obx(
