@@ -128,6 +128,8 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final technician = AraquariAccessController.instance.currentUser;
+    final auditWarning = AraquariAccessController.instance.auditWarning;
     return Row(
       children: [
         SvgPicture.asset(
@@ -147,12 +149,25 @@ class _Header extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: MyTheme.accent.withOpacity(0.28)),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.admin_panel_settings_outlined, size: 17),
-                SizedBox(width: 7),
-                Text('Modo TI'),
+                const Icon(Icons.admin_panel_settings_outlined, size: 17),
+                const SizedBox(width: 7),
+                Text(
+                  technician == null
+                      ? 'Modo TI'
+                      : 'Modo TI · ${technician.displayName}',
+                ),
               ],
+            ),
+          ),
+        if (tiMode && auditWarning != null)
+          Tooltip(
+            message: auditWarning,
+            child: Icon(
+              Icons.cloud_off_outlined,
+              size: 20,
+              color: Theme.of(context).colorScheme.error,
             ),
           ),
         IconButton(
@@ -286,6 +301,11 @@ class _SupportCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'As sessões de suporte podem gerar registros técnicos para fins de segurança e auditoria.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             if (tiMode && !bind.isDisableSettings()) ...[
               const SizedBox(height: 18),

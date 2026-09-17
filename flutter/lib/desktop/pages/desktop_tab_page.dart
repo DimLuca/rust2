@@ -3,6 +3,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/araquari/araquari_access_controller.dart';
+import 'package:flutter_hbb/desktop/araquari/araquari_window_controller.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -71,6 +72,11 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
   void initState() {
     super.initState();
     AraquariAccessController.instance.addListener(_handleAccessModeChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AraquariWindowController.applyMode(
+        AraquariAccessController.instance.isTiMode,
+      );
+    });
     // HardwareKeyboard.instance.addHandler(_handleKeyEvent);
   }
 
@@ -81,6 +87,9 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
       }
       tabController.jumpTo(0);
     }
+    AraquariWindowController.applyMode(
+      AraquariAccessController.instance.isTiMode,
+    );
     if (mounted) setState(() {});
   }
 
