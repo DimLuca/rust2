@@ -18,7 +18,7 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let database_url = required("DATABASE_URL")?;
         let jwt_secret = required("ARAQUARIDESK_JWT_SECRET")?;
-        if jwt_secret.as_bytes().len() < 32 {
+        if jwt_secret.len() < 32 {
             bail!("ARAQUARIDESK_JWT_SECRET must contain at least 32 bytes");
         }
 
