@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: araquaridesk
+      POSTGRES_USER: araquaridesk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?configure POSTGRES_PASSWORD}
+    volumes:
+      - araquaridesk-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U araquaridesk -d araquaridesk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://araquaridesk:${POSTGRES_PASSWORD}@postgres:5432/araquaridesk
+      ARAQUARIDESK_JWT_SECRET: ${ARAQUARIDESK_JWT_SECRET:?configure ARAQUARIDESK_JWT_SECRET}
+      ARAQUARIDESK_BIND: 0.0.0.0:8787
+      ARAQUARIDESK_TRUSTED_PROXY_CIDRS: ${ARAQUARIDESK_TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+      RUST_LOG: ${RUST_LOG:-araquaridesk_server=info,tower_http=info}
+    expose:
+      - "8787"
+    ports:
+      - "127.0.0.1:8787:8787"
+    networks:
+      - backend
+
+volumes:
+  araquaridesk-postgres:
+
+networks:
+  backend:
+    internal: true
