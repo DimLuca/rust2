@@ -69,6 +69,14 @@ struct ListedUser {
     enabled: bool,
 }
 
+type AuditRow = (
+    chrono::DateTime<chrono::Utc>,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -151,13 +159,7 @@ async fn main() -> Result<()> {
             }
         }
         Command::ListAudit { limit } => {
-            let rows: Vec<(
-                chrono::DateTime<chrono::Utc>,
-                String,
-                Option<String>,
-                Option<String>,
-                Option<String>,
-            )> = sqlx::query_as(
+            let rows: Vec<AuditRow> = sqlx::query_as(
                 "SELECT occurred_at, event_type, technician_username, client_rustdesk_id, result \
                      FROM audit_events ORDER BY occurred_at DESC LIMIT $1",
             )

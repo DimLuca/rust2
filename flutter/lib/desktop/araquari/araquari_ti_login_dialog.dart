@@ -190,7 +190,7 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
                             color: Theme.of(context).colorScheme.error,
                           ),
                           const SizedBox(width: 9),
-                          const Expanded(
+                          Expanded(
                             child: Text(_errorMessage),
                           ),
                         ],

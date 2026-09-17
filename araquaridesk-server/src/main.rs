@@ -8,7 +8,10 @@ use araquaridesk_server::{
     state::AppState,
 };
 use sqlx::postgres::PgPoolOptions;
-use tower_http::{request_id::MakeRequestUuid, trace::TraceLayer, ServiceBuilderExt};
+use tower_http::{
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    trace::TraceLayer,
+};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -39,12 +42,10 @@ async fn main() -> Result<()> {
         dummy_password_hash: Arc::from(dummy_password_hash),
         config: Arc::clone(&config),
     };
-    let app = api::router(state).layer(
-        tower::ServiceBuilder::new()
-            .set_x_request_id(MakeRequestUuid)
-            .layer(TraceLayer::new_for_http())
-            .propagate_x_request_id(),
-    );
+    let app = api::router(state)
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(TraceLayer::new_for_http())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     info!(address = %config.bind, "AraquariDesk API listening");
