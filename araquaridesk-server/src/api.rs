@@ -1,4 +1,7 @@
-use std::{net::{IpAddr, SocketAddr}, str::FromStr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+};
 
 use anyhow::Context;
 use axum::{
@@ -17,9 +20,8 @@ use uuid::Uuid;
 use crate::{
     error::{ApiError, ApiResult},
     models::{
-        AuditEventRequest, AuditEventView, AuthContext, CreateUserRequest,
-        LoginRequest, LoginResponse, PublicUser, ResetPasswordRequest, Role,
-        UpdateUserRequest, UserRecord,
+        AuditEventRequest, AuditEventView, AuthContext, CreateUserRequest, LoginRequest,
+        LoginResponse, PublicUser, ResetPasswordRequest, Role, UpdateUserRequest, UserRecord,
     },
     security::{create_token, decode_token, hash_password, verify_password},
     state::AppState,
@@ -31,7 +33,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/login", post(login))
         .route("/api/v1/auth/logout", post(logout))
         .route("/api/v1/auth/me", get(me))
-        .route("/api/v1/audit/events", post(create_audit_event).get(list_audit_events))
+        .route(
+            "/api/v1/audit/events",
+            post(create_audit_event).get(list_audit_events),
+        )
         .route("/api/v1/users", get(list_users).post(create_user))
         .route("/api/v1/users/:id", patch(update_user))
         .route("/api/v1/users/:id/reset-password", post(reset_password))
@@ -59,7 +64,14 @@ async fn login(
     let source_ip = resolve_source_ip(peer.ip(), &headers, &state.config.trusted_proxy_cidrs);
     let limiter_key = format!("{source_ip}|{username}");
     if !state.login_limiter.check(&limiter_key) {
-        record_login_failure(&state.pool, &username, source_ip, "RATE_LIMITED", request.device.as_ref()).await?;
+        record_login_failure(
+            &state.pool,
+            &username,
+            source_ip,
+            "RATE_LIMITED",
+            request.device.as_ref(),
+        )
+        .await?;
         return Err(ApiError::RateLimited);
     }
 
@@ -74,7 +86,14 @@ async fn login(
 
     let Some(user) = user.filter(|value| value.enabled && password_valid) else {
         state.login_limiter.record_failure(&limiter_key);
-        record_login_failure(&state.pool, &username, source_ip, "INVALID_CREDENTIALS", request.device.as_ref()).await?;
+        record_login_failure(
+            &state.pool,
+            &username,
+            source_ip,
+            "INVALID_CREDENTIALS",
+            request.device.as_ref(),
+        )
+        .await?;
         return Err(ApiError::Unauthorized);
     };
 
@@ -110,7 +129,14 @@ async fn login(
         .bind(user.id)
         .execute(&mut *transaction)
         .await?;
-    insert_login_success(&mut transaction, &user, session_id, source_ip, request.device.as_ref()).await?;
+    insert_login_success(
+        &mut transaction,
+        &user,
+        session_id,
+        source_ip,
+        request.device.as_ref(),
+    )
+    .await?;
     transaction.commit().await?;
 
     let mut public_user = PublicUser::from(user);
@@ -234,7 +260,10 @@ async fn list_audit_events(
     Ok(Json(events))
 }
 
-async fn list_users(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<PublicUser>>> {
+async fn list_users(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<PublicUser>>> {
     require_admin(authenticate(&state, &headers).await?)?;
     let users = sqlx::query_as::<_, UserRecord>(
         "SELECT id, username, password_hash, display_name, role, enabled, token_version, \
@@ -339,7 +368,9 @@ async fn disable_user(
 ) -> ApiResult<StatusCode> {
     let actor = require_admin(authenticate(&state, &headers).await?)?;
     if actor.user.id == id {
-        return Err(ApiError::Validation("não é permitido desativar o próprio usuário".to_owned()));
+        return Err(ApiError::Validation(
+            "não é permitido desativar o próprio usuário".to_owned(),
+        ));
     }
     let result = sqlx::query(
         "UPDATE users SET enabled = FALSE, token_version = token_version + 1, updated_at = NOW() WHERE id = $1",
@@ -360,7 +391,8 @@ async fn authenticate(state: &AppState, headers: &HeaderMap) -> ApiResult<AuthCo
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .ok_or(ApiError::Unauthorized)?;
-    let claims = decode_token(&state.config.jwt_secret, token).map_err(|_| ApiError::Unauthorized)?;
+    let claims =
+        decode_token(&state.config.jwt_secret, token).map_err(|_| ApiError::Unauthorized)?;
     let user = sqlx::query_as::<_, UserRecord>(
         "SELECT u.id, u.username, u.password_hash, u.display_name, u.role, u.enabled, \
          u.token_version, u.created_at, u.updated_at, u.last_login_at \
@@ -374,7 +406,10 @@ async fn authenticate(state: &AppState, headers: &HeaderMap) -> ApiResult<AuthCo
     .await?
     .filter(|user| user.token_version == claims.ver && user.role == claims.role)
     .ok_or(ApiError::Unauthorized)?;
-    Ok(AuthContext { session_id: claims.jti, user: PublicUser::from(user) })
+    Ok(AuthContext {
+        session_id: claims.jti,
+        user: PublicUser::from(user),
+    })
 }
 
 fn require_admin(auth: AuthContext) -> ApiResult<AuthContext> {
@@ -384,7 +419,10 @@ fn require_admin(auth: AuthContext) -> ApiResult<AuthContext> {
     Ok(auth)
 }
 
-async fn find_user_by_username(pool: &PgPool, username: &str) -> Result<Option<UserRecord>, sqlx::Error> {
+async fn find_user_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<Option<UserRecord>, sqlx::Error> {
     sqlx::query_as::<_, UserRecord>(
         "SELECT id, username, password_hash, display_name, role, enabled, token_version, \
          created_at, updated_at, last_login_at FROM users WHERE LOWER(username) = LOWER($1)",
@@ -394,7 +432,11 @@ async fn find_user_by_username(pool: &PgPool, username: &str) -> Result<Option<U
     .await
 }
 
-async fn revoke_user_sessions(pool: &PgPool, user_id: Uuid, reason: &str) -> Result<(), sqlx::Error> {
+async fn revoke_user_sessions(
+    pool: &PgPool,
+    user_id: Uuid,
+    reason: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, NOW()), \
          revoke_reason = COALESCE(revoke_reason, $2) WHERE user_id = $1 AND revoked_at IS NULL",
@@ -504,9 +546,11 @@ fn resolve_source_ip(peer: IpAddr, headers: &HeaderMap, trusted: &[IpNet]) -> Ip
 fn normalize_username(username: &str) -> ApiResult<String> {
     let username = username.trim().to_lowercase();
     let valid = (3..=64).contains(&username.len())
-        && username
-            .chars()
-            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || ".-_".contains(character));
+        && username.chars().all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || ".-_".contains(character)
+        });
     if !valid {
         return Err(ApiError::Validation("usuário inválido".to_owned()));
     }
@@ -543,10 +587,22 @@ fn validate_audit_request(request: &AuditEventRequest) -> ApiResult<()> {
 }
 
 fn contains_sensitive_key(value: &Value) -> bool {
-    const DENIED: &[&str] = &["password", "senha", "token", "clipboard", "screen", "content", "file_content", "keystrokes"];
+    const DENIED: &[&str] = &[
+        "password",
+        "senha",
+        "token",
+        "clipboard",
+        "screen",
+        "content",
+        "file_content",
+        "keystrokes",
+    ];
     match value {
         Value::Object(map) => map.iter().any(|(key, value)| {
-            DENIED.iter().any(|denied| key.to_lowercase().contains(denied)) || contains_sensitive_key(value)
+            DENIED
+                .iter()
+                .any(|denied| key.to_lowercase().contains(denied))
+                || contains_sensitive_key(value)
         }),
         Value::Array(values) => values.iter().any(contains_sensitive_key),
         _ => false,
@@ -580,8 +636,11 @@ mod tests {
 
     #[test]
     fn sensitive_audit_metadata_is_rejected() {
-        assert!(contains_sensitive_key(&json!({"nested": {"password": "secret"}})));
-        assert!(!contains_sensitive_key(&json!({"connection_type": "remote"})));
+        assert!(contains_sensitive_key(
+            &json!({"nested": {"password": "secret"}})
+        ));
+        assert!(!contains_sensitive_key(
+            &json!({"connection_type": "remote"})
+        ));
     }
 }
-

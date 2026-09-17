@@ -28,10 +28,7 @@ impl Config {
             bind: parse("ARAQUARIDESK_BIND", "127.0.0.1:8787")?,
             token_ttl_minutes: parse("ARAQUARIDESK_TOKEN_TTL_MINUTES", "60")?,
             login_limit: parse("ARAQUARIDESK_LOGIN_LIMIT", "5")?,
-            login_window_seconds: parse(
-                "ARAQUARIDESK_LOGIN_WINDOW_SECONDS",
-                "300",
-            )?,
+            login_window_seconds: parse("ARAQUARIDESK_LOGIN_WINDOW_SECONDS", "300")?,
             trusted_proxy_cidrs: env::var("ARAQUARIDESK_TRUSTED_PROXY_CIDRS")
                 .unwrap_or_default()
                 .split(',')
@@ -61,4 +58,3 @@ where
         .parse()
         .with_context(|| format!("invalid value for {name}"))
 }
-

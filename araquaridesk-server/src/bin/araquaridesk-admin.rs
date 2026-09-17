@@ -5,7 +5,10 @@ use sqlx::{postgres::PgPoolOptions, FromRow};
 use uuid::Uuid;
 
 #[derive(Parser)]
-#[command(name = "araquaridesk-admin", about = "Administração segura da AraquariDesk API")]
+#[command(
+    name = "araquaridesk-admin",
+    about = "Administração segura da AraquariDesk API"
+)]
 struct Cli {
     #[arg(long, env = "DATABASE_URL")]
     database_url: String,
@@ -77,7 +80,11 @@ async fn main() -> Result<()> {
     sqlx::migrate!().run(&pool).await?;
 
     match cli.command {
-        Command::CreateUser { username, display_name, role } => {
+        Command::CreateUser {
+            username,
+            display_name,
+            role,
+        } => {
             let password = read_new_password()?;
             let password_hash = hash_password(password).await?;
             let id: Uuid = sqlx::query_scalar(
@@ -104,7 +111,9 @@ async fn main() -> Result<()> {
             .bind(password_hash)
             .fetch_optional(&mut *transaction)
             .await?;
-            let Some(user_id) = user_id else { bail!("usuário não encontrado") };
+            let Some(user_id) = user_id else {
+                bail!("usuário não encontrado")
+            };
             sqlx::query(
                 "UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, NOW()), \
                  revoke_reason = COALESCE(revoke_reason, 'PASSWORD_RESET') \
@@ -131,18 +140,30 @@ async fn main() -> Result<()> {
             .fetch_all(&pool)
             .await?;
             for user in users {
-                println!("{}\t{}\t{}\t{:?}\t{}", user.id, user.username, user.display_name, user.role, if user.enabled { "ativo" } else { "desativado" });
+                println!(
+                    "{}\t{}\t{}\t{:?}\t{}",
+                    user.id,
+                    user.username,
+                    user.display_name,
+                    user.role,
+                    if user.enabled { "ativo" } else { "desativado" }
+                );
             }
         }
         Command::ListAudit { limit } => {
-            let rows: Vec<(chrono::DateTime<chrono::Utc>, String, Option<String>, Option<String>, Option<String>)> =
-                sqlx::query_as(
-                    "SELECT occurred_at, event_type, technician_username, client_rustdesk_id, result \
+            let rows: Vec<(
+                chrono::DateTime<chrono::Utc>,
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+            )> = sqlx::query_as(
+                "SELECT occurred_at, event_type, technician_username, client_rustdesk_id, result \
                      FROM audit_events ORDER BY occurred_at DESC LIMIT $1",
-                )
-                .bind(limit.clamp(1, 1000))
-                .fetch_all(&pool)
-                .await?;
+            )
+            .bind(limit.clamp(1, 1000))
+            .fetch_all(&pool)
+            .await?;
             for (at, event, technician, client, result) in rows {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
@@ -177,7 +198,9 @@ async fn set_enabled(pool: &sqlx::PgPool, username: &str, enabled: bool) -> Resu
     .bind(enabled)
     .fetch_optional(&mut *transaction)
     .await?;
-    let Some(user_id) = user_id else { bail!("usuário não encontrado") };
+    let Some(user_id) = user_id else {
+        bail!("usuário não encontrado")
+    };
     if !enabled {
         sqlx::query(
             "UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, NOW()), \

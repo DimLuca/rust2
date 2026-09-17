@@ -56,7 +56,9 @@ pub async fn verify_password(password: String, encoded: String) -> Result<bool> 
 
 pub fn validate_password(password: &str) -> Result<()> {
     if password.len() < 12 || password.len() > 256 {
-        return Err(anyhow!("password must contain between 12 and 256 characters"));
+        return Err(anyhow!(
+            "password must contain between 12 and 256 characters"
+        ));
     }
     Ok(())
 }
@@ -119,7 +121,10 @@ impl LoginLimiter {
         let now = Instant::now();
         let mut attempts = self.attempts.lock().expect("login limiter poisoned");
         let entries = attempts.entry(key.to_owned()).or_default();
-        while entries.front().is_some_and(|at| now.duration_since(*at) >= self.window) {
+        while entries
+            .front()
+            .is_some_and(|at| now.duration_since(*at) >= self.window)
+        {
             entries.pop_front();
         }
         entries.len() < self.max_attempts
@@ -151,9 +156,11 @@ mod tests {
             .await
             .unwrap();
         assert!(hash.starts_with("$argon2id$"));
-        assert!(verify_password("a-strong-test-password".to_owned(), hash.clone())
-            .await
-            .unwrap());
+        assert!(
+            verify_password("a-strong-test-password".to_owned(), hash.clone())
+                .await
+                .unwrap()
+        );
         assert!(!verify_password("incorrect-password".to_owned(), hash)
             .await
             .unwrap());
@@ -184,4 +191,3 @@ mod tests {
         assert!(limiter.check("client"));
     }
 }
-

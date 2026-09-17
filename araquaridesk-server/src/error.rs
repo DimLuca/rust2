@@ -53,9 +53,7 @@ impl IntoResponse for ApiError {
                 "RATE_LIMITED",
                 "Muitas tentativas. Aguarde antes de tentar novamente.".to_owned(),
             ),
-            Self::Validation(message) => {
-                (StatusCode::BAD_REQUEST, "VALIDATION_ERROR", message)
-            }
+            Self::Validation(message) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR", message),
             Self::Conflict => (
                 StatusCode::CONFLICT,
                 "CONFLICT",
@@ -87,4 +85,3 @@ impl From<sqlx::Error> for ApiError {
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
-

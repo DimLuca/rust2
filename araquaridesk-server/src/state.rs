@@ -11,4 +11,3 @@ pub struct AppState {
     pub login_limiter: Arc<LoginLimiter>,
     pub dummy_password_hash: Arc<str>,
 }
-
