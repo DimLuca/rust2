@@ -583,7 +583,11 @@ fn validate_audit_request(request: &AuditEventRequest) -> ApiResult<()> {
     }
     validate_device_identity(request.technician_device.as_ref())?;
     validate_device_identity(request.client_device.as_ref())?;
-    if request.result.as_ref().is_some_and(|value| value.len() > 128) {
+    if request
+        .result
+        .as_ref()
+        .is_some_and(|value| value.len() > 128)
+    {
         return Err(ApiError::Validation("resultado inválido".to_owned()));
     }
     let serialized = serde_json::to_vec(&request.metadata)
