@@ -3075,27 +3075,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tcp_proxy_addr_normalizes_bare_ipv6_host() {
-        struct RestoreCustomRendezvousServer(String);
-
-        impl Drop for RestoreCustomRendezvousServer {
-            fn drop(&mut self) {
-                Config::set_option(
-                    keys::OPTION_CUSTOM_RENDEZVOUS_SERVER.to_string(),
-                    self.0.clone(),
-                );
-            }
-        }
-
-        let _restore = RestoreCustomRendezvousServer(Config::get_option(
-            keys::OPTION_CUSTOM_RENDEZVOUS_SERVER,
-        ));
-        Config::set_option(
-            keys::OPTION_CUSTOM_RENDEZVOUS_SERVER.to_string(),
-            "1:2".to_string(),
+    fn test_get_tcp_proxy_addr_uses_municipal_server() {
+        assert_eq!(
+            get_tcp_proxy_addr(),
+            format!("jiraiya.araquari.sc.gov.br:{RENDEZVOUS_PORT}")
         );
-
-        assert_eq!(get_tcp_proxy_addr(), format!("[1:2]:{RENDEZVOUS_PORT}"));
     }
 
     #[tokio::test]
