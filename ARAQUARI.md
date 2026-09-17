@@ -31,7 +31,27 @@ dos instaladores ocorre no GitHub Actions, não em uma única máquina local.
 ## Acesso restrito da TI
 
 O aplicativo sempre inicia no modo Usuário. O modo TI libera as ferramentas de
-conexão de saída e as configurações somente após autenticação local. Os dados de
-acesso não ficam no código-fonte: configure os segredos de Actions
-`ARAQUARI_TI_USERNAME_SHA256` e `ARAQUARI_TI_PASSWORD_SHA256` com os respectivos
-resumos SHA-256 antes de gerar o instalador Windows.
+conexão de saída e as configurações somente após autenticação na AraquariDesk
+API. Não existe usuário, senha ou hash administrativo no Flutter ou no GitHub.
+
+Configure a variável de repositório `ARAQUARIDESK_API_URL` com o endpoint HTTPS.
+As instruções de PostgreSQL, criação de administradores e técnicos, alteração de
+senha, auditoria e reverse proxy estão em `araquaridesk-server/README.md`.
+
+No modo Usuário, a janela é compacta e mostra somente o painel de recebimento de
+suporte. Após o login da TI, a mesma janela expande e apresenta o painel de
+controle remoto. Sair da TI revoga a sessão e retorna imediatamente ao layout
+compacto.
+
+## Assinatura do Windows
+
+O pipeline aceita um certificado Authenticode por meio dos segredos
+`WINDOWS_CODESIGN_PFX_BASE64` e `WINDOWS_CODESIGN_PFX_PASSWORD`. A URL do
+servidor de timestamp pode ser definida na variável
+`WINDOWS_CODESIGN_TIMESTAMP_URL`. A chave privada nunca deve ser adicionada ao
+repositório.
+
+Sem certificado, o workflow informa claramente que os pacotes estão sem
+assinatura. Nenhuma proteção do Windows é desativada. A remoção consistente dos
+alertas do SmartScreen depende de certificado confiável, timestamp e reputação
+do editor.

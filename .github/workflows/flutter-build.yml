@@ -52,8 +52,10 @@ env:
   MACOS_P12_BASE64: "${{ secrets.MACOS_P12_BASE64 }}"
   UPLOAD_ARTIFACT: "${{ inputs.upload-artifact }}"
   SIGN_BASE_URL: "${{ secrets.SIGN_BASE_URL }}-2"
-  ARAQUARI_TI_USERNAME_SHA256: "${{ secrets.ARAQUARI_TI_USERNAME_SHA256 }}"
-  ARAQUARI_TI_PASSWORD_SHA256: "${{ secrets.ARAQUARI_TI_PASSWORD_SHA256 }}"
+  ARAQUARIDESK_API_URL: "${{ vars.ARAQUARIDESK_API_URL }}"
+  WINDOWS_CODESIGN_PFX_BASE64: "${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}"
+  WINDOWS_CODESIGN_PFX_PASSWORD: "${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}"
+  WINDOWS_CODESIGN_TIMESTAMP_URL: "${{ vars.WINDOWS_CODESIGN_TIMESTAMP_URL || 'http://timestamp.digicert.com' }}"
 
 jobs:
   generate-sbom:
@@ -362,6 +364,33 @@ jobs:
           pip3 install requests argparse
           BASE_URL=${{ env.SIGN_BASE_URL }} SECRET_KEY=${{ secrets.SIGN_SECRET_KEY }} python3 res/job.py sign_files ./rustdesk/
 
+      - name: Import certificate and sign AraquariDesk executable
+        if: env.UPLOAD_ARTIFACT == 'true' && env.WINDOWS_CODESIGN_PFX_BASE64 != ''
+        shell: pwsh
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'araquaridesk-codesign.pfx'
+          try {
+            [IO.File]::WriteAllBytes(
+              $pfxPath,
+              [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64)
+            )
+            $password = ConvertTo-SecureString $env:WINDOWS_CODESIGN_PFX_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            if (-not $cert.HasPrivateKey) {
+              throw 'The configured Code Signing certificate has no private key.'
+            }
+            "ARAQUARI_CODESIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+            & signtool sign /sha1 $cert.Thumbprint /fd SHA256 /tr $env:WINDOWS_CODESIGN_TIMESTAMP_URL /td SHA256 .\rustdesk\rustdesk.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed.' }
+          } finally {
+            Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Report unsigned Windows build
+        if: env.UPLOAD_ARTIFACT == 'true' && env.WINDOWS_CODESIGN_PFX_BASE64 == '' && env.SIGN_BASE_URL == '-2'
+        shell: pwsh
+        run: Write-Warning 'Code Signing certificate is not configured. Windows artifacts will be unsigned and may trigger SmartScreen.'
+
       - name: Build self-extracted executable
         shell: bash
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -372,7 +401,7 @@ jobs:
           python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./SignOutput
-          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/AraquariDesk-Setup-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
@@ -395,8 +424,8 @@ jobs:
           $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
           msbuild msi.sln -p:Configuration=Release -p:Platform=$msiPlatform /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
-          mv $msi.FullName ../../SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
-          sha256sum ../../SignOutput/rustdesk-*.msi
+          mv $msi.FullName ../../SignOutput/AraquariDesk-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
+          sha256sum ../../SignOutput/AraquariDesk-*.msi
 
       - name: Build pre-built MSI template
         # Two things this works around: preprocess.py rewrites res/msi in place, so the
@@ -452,6 +481,17 @@ jobs:
         run: |
           BASE_URL=${{ env.SIGN_BASE_URL }} SECRET_KEY=${{ secrets.SIGN_SECRET_KEY }} python3 res/job.py sign_files ./SignOutput
 
+      - name: Sign and verify AraquariDesk packages
+        if: env.UPLOAD_ARTIFACT == 'true' && env.ARAQUARI_CODESIGN_THUMBPRINT != ''
+        shell: pwsh
+        run: |
+          Get-ChildItem .\SignOutput\AraquariDesk-* | ForEach-Object {
+            & signtool sign /sha1 $env:ARAQUARI_CODESIGN_THUMBPRINT /fd SHA256 /tr $env:WINDOWS_CODESIGN_TIMESTAMP_URL /td SHA256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($_.Name)" }
+            & signtool verify /pa /all /v $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($_.Name)" }
+          }
+
       - name: Publish Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -459,8 +499,8 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            ./SignOutput/rustdesk-*.msi
-            ./SignOutput/rustdesk-*.exe
+            ./SignOutput/AraquariDesk-*.msi
+            ./SignOutput/AraquariDesk-*.exe
 
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
   build-for-windows-sciter:
