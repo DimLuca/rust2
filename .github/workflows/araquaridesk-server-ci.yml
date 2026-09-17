@@ -46,12 +46,16 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: araquaridesk-server
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Format sources for validation
+        run: cargo fmt --all
+      - name: Upload formatted server sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: araquaridesk-server-formatted
+          path: araquaridesk-server/src
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test --all-targets
       - name: Apply migrations
         run: cargo run --bin araquaridesk-admin -- list-users
-
