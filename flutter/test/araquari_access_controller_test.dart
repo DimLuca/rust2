@@ -4,10 +4,15 @@ import 'package:flutter_hbb/desktop/araquari/araquari_auth_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeAuthService extends AraquariAuthService {
-  _FakeAuthService({this.loginSucceeds = true, this.sessionValid = true});
+  _FakeAuthService({
+    this.loginSucceeds = true,
+    this.sessionValid = true,
+    this.auditSucceeds = true,
+  });
 
   final bool loginSucceeds;
   bool sessionValid;
+  final bool auditSucceeds;
   int auditCalls = 0;
   bool logoutCalled = false;
 
@@ -44,6 +49,7 @@ class _FakeAuthService extends AraquariAuthService {
     Map<String, dynamic> metadata = const {},
   }) async {
     auditCalls++;
+    if (!auditSucceeds) throw Exception('audit unavailable');
   }
 
   @override
@@ -80,6 +86,15 @@ void main() {
     expect(controller.isTiMode, isFalse);
   });
 
+  test('remote control is blocked when audit cannot be recorded', () async {
+    final controller = AraquariAccessController(
+      authService: _FakeAuthService(auditSucceeds: false),
+    );
+    await controller.authenticate('user', 'valid');
+    expect(await controller.authorizeRemoteConnection('123456789'), isNull);
+    expect(controller.lastAuthorizationError, contains('auditoria'));
+  });
+
   test('logout revokes remotely and immediately returns to user mode', () async {
     final service = _FakeAuthService();
     final controller = AraquariAccessController(authService: service);
@@ -89,4 +104,3 @@ void main() {
     expect(controller.isTiMode, isFalse);
   });
 }
-

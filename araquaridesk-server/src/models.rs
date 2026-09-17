@@ -132,6 +132,10 @@ impl AuditEventType {
             Self::RemoteConnectionRejected => "REMOTE_CONNECTION_REJECTED",
         }
     }
+
+    pub fn is_client_reportable(&self) -> bool {
+        !matches!(self, Self::LoginSuccess | Self::LoginFailed | Self::Logout)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

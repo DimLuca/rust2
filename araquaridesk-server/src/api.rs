@@ -573,8 +573,18 @@ fn normalize_optional_ip(value: Option<&str>) -> ApiResult<Option<String>> {
 }
 
 fn validate_audit_request(request: &AuditEventRequest) -> ApiResult<()> {
+    if !request.event_type.is_client_reportable() {
+        return Err(ApiError::Validation(
+            "evento reservado para registro interno do servidor".to_owned(),
+        ));
+    }
     if request.duration_seconds.is_some_and(|value| value < 0) {
         return Err(ApiError::Validation("duração inválida".to_owned()));
+    }
+    validate_device_identity(request.technician_device.as_ref())?;
+    validate_device_identity(request.client_device.as_ref())?;
+    if request.result.as_ref().is_some_and(|value| value.len() > 128) {
+        return Err(ApiError::Validation("resultado inválido".to_owned()));
     }
     let serialized = serde_json::to_vec(&request.metadata)
         .map_err(|_| ApiError::Validation("metadata inválida".to_owned()))?;
@@ -583,6 +593,28 @@ fn validate_audit_request(request: &AuditEventRequest) -> ApiResult<()> {
             "metadata contém dados não permitidos ou excede o limite".to_owned(),
         ));
     }
+    Ok(())
+}
+
+fn validate_device_identity(device: Option<&crate::models::DeviceIdentity>) -> ApiResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    let fields = [
+        (device.device_id.as_deref(), 128),
+        (device.hostname.as_deref(), 255),
+        (device.os_username.as_deref(), 255),
+        (device.rustdesk_id.as_deref(), 64),
+    ];
+    if fields
+        .into_iter()
+        .any(|(value, limit)| value.is_some_and(|value| value.len() > limit))
+    {
+        return Err(ApiError::Validation(
+            "identificação do dispositivo excede o limite".to_owned(),
+        ));
+    }
+    normalize_optional_ip(device.local_ip.as_deref())?;
     Ok(())
 }
 

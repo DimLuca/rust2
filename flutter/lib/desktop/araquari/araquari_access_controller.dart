@@ -33,6 +33,7 @@ class AraquariAccessController extends ChangeNotifier {
   AraquariAccessStatus _status = AraquariAccessStatus.signedOut;
   AraquariSession? _session;
   String? _auditWarning;
+  String? _lastAuthorizationError;
 
   AraquariAccessStatus get status => _status;
   bool get isAuthenticating =>
@@ -43,6 +44,7 @@ class AraquariAccessController extends ChangeNotifier {
       !_session!.isExpired;
   AraquariUser? get currentUser => isTiMode ? _session!.user : null;
   String? get auditWarning => _auditWarning;
+  String? get lastAuthorizationError => _lastAuthorizationError;
 
   Future<AraquariAuthAttempt> authenticate(
     String username,
@@ -60,6 +62,7 @@ class AraquariAccessController extends ChangeNotifier {
       _session = session;
       _status = AraquariAccessStatus.authenticated;
       _auditWarning = null;
+      _lastAuthorizationError = null;
       notifyListeners();
       unawaited(_sendAudit(eventType: 'TI_MODE_STARTED', result: 'SUCCESS'));
       return const AraquariAuthAttempt.success();
@@ -73,16 +76,32 @@ class AraquariAccessController extends ChangeNotifier {
 
   Future<bool> ensureValidSession() async {
     final session = _session;
-    if (!isTiMode || session == null) {
-      await _clearLocalSession();
+    if (session == null || _status != AraquariAccessStatus.authenticated) {
+      _setAuthorizationError(
+        'Entre no Modo TI para iniciar uma conexão remota.',
+      );
+      await _clearLocalSession(clearAuthorizationError: false);
+      return false;
+    }
+    if (session.isExpired) {
+      _setAuthorizationError(
+        'A sessão da TI expirou. Entre novamente para continuar.',
+      );
+      await _clearLocalSession(clearAuthorizationError: false);
       return false;
     }
     final valid = await _authService.validate(session);
-    if (!valid) await _clearLocalSession();
+    if (!valid) {
+      _setAuthorizationError(
+        'Não foi possível validar a sessão da TI no servidor.',
+      );
+      await _clearLocalSession(clearAuthorizationError: false);
+    }
     return valid;
   }
 
   Future<String?> authorizeRemoteConnection(String targetRustDeskId) async {
+    _setAuthorizationError(null);
     if (!await ensureValidSession()) return null;
     final supportSessionId = Uuid().v4();
     final audited = await _sendAudit(
@@ -92,7 +111,10 @@ class AraquariAccessController extends ChangeNotifier {
       result: 'REQUESTED',
     );
     if (!audited) {
-      debugPrint('AraquariDesk: remote request continued with audit warning');
+      _setAuthorizationError(
+        'A conexão foi bloqueada porque a auditoria está indisponível.',
+      );
+      return null;
     }
     return supportSessionId;
   }
@@ -126,6 +148,12 @@ class AraquariAccessController extends ChangeNotifier {
     }
   }
 
+  void _setAuthorizationError(String? value) {
+    if (_lastAuthorizationError == value) return;
+    _lastAuthorizationError = value;
+    notifyListeners();
+  }
+
   Future<bool> _sendAudit({
     required String eventType,
     String? supportSessionId,
@@ -155,11 +183,12 @@ class AraquariAccessController extends ChangeNotifier {
     }
   }
 
-  Future<void> _clearLocalSession() async {
+  Future<void> _clearLocalSession({bool clearAuthorizationError = true}) async {
     if (_session == null && _status == AraquariAccessStatus.signedOut) return;
     _session = null;
     _status = AraquariAccessStatus.signedOut;
     _auditWarning = null;
+    if (clearAuthorizationError) _lastAuthorizationError = null;
     notifyListeners();
   }
 }

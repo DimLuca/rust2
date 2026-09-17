@@ -2,6 +2,8 @@ name: AraquariDesk Server CI
 
 on:
   push:
+    branches:
+      - master
     paths:
       - "araquaridesk-server/**"
       - ".github/workflows/araquaridesk-server-ci.yml"
@@ -46,20 +48,11 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: araquaridesk-server
-      - name: Format sources for validation
-        run: cargo fmt --all
-      - name: Generate dependency lockfile
-        run: cargo generate-lockfile
-      - name: Upload formatted server sources
-        uses: actions/upload-artifact@v4
-        with:
-          name: araquaridesk-server-formatted
-          path: |
-            araquaridesk-server/src
-            araquaridesk-server/Cargo.lock
+      - name: Check formatting
+        run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Test
-        run: cargo test --all-targets
+        run: cargo test --locked --all-targets
       - name: Apply migrations
-        run: cargo run --bin araquaridesk-admin -- list-users
+        run: cargo run --locked --bin araquaridesk-admin -- list-users

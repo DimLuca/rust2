@@ -2535,7 +2535,13 @@ Future<bool> connectMainDesktop(String id,
     bool? isSharedPassword}) async {
   final supportSessionId = await AraquariAccessController.instance
       .authorizeRemoteConnection(id);
-  if (supportSessionId == null) return false;
+  if (supportSessionId == null) {
+    showToast(
+      AraquariAccessController.instance.lastAuthorizationError ??
+          'A conexão remota não foi autorizada.',
+    );
+    return false;
+  }
   try {
     if (isFileTransfer) {
       await rustDeskWinManager.newFileTransfer(id,
