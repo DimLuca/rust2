@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "Prefeitura Municipal de Araquari" "\0"
             VALUE "FileDescription", "AraquariDesk - Suporte Remoto" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "rustdesk" "\0"
+            VALUE "InternalName", "AraquariDesk" "\0"
             VALUE "LegalCopyright", "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved." "\0"
-            VALUE "OriginalFilename", "rustdesk.exe" "\0"
+            VALUE "OriginalFilename", "AraquariDesk.exe" "\0"
             VALUE "ProductName", "AraquariDesk" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

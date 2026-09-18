@@ -1,0 +1,58 @@
+name: AraquariDesk Server CI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "araquaridesk-server/**"
+      - ".github/workflows/araquaridesk-server-ci.yml"
+  pull_request:
+    paths:
+      - "araquaridesk-server/**"
+      - ".github/workflows/araquaridesk-server-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: araquaridesk_test
+          POSTGRES_USER: araquaridesk
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U araquaridesk -d araquaridesk_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: araquaridesk-server
+    env:
+      DATABASE_URL: postgres://araquaridesk:test-only-password@127.0.0.1:5432/araquaridesk_test
+      ARAQUARIDESK_JWT_SECRET: ci-only-secret-with-more-than-thirty-two-bytes
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: "1.88"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: araquaridesk-server
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked --all-targets
+      - name: Apply migrations
+        run: cargo run --locked --bin araquaridesk-admin -- list-users

@@ -1,69 +1,194 @@
-import 'dart:convert';
+import 'dart:async';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
-typedef AraquariCredentialVerifier = bool Function(
-  String username,
-  String password,
-);
+import 'araquari_auth_models.dart';
+import 'araquari_auth_service.dart';
 
-/// Keeps the restricted TI session in memory only.
+enum AraquariAccessStatus { signedOut, authenticating, authenticated }
+
+class AraquariAuthAttempt {
+  const AraquariAuthAttempt.success()
+      : authenticated = true,
+        errorKind = null;
+
+  const AraquariAuthAttempt.failure(this.errorKind) : authenticated = false;
+
+  final bool authenticated;
+  final AraquariAuthErrorKind? errorKind;
+}
+
+/// Central authority for the TI session.
 ///
-/// The verifier is deliberately isolated so it can later be replaced by an
-/// API, LDAP or another institutional identity provider.
+/// Tokens exist only in memory. Closing the process always returns the client
+/// to User Mode, and every outgoing connection validates the server session.
 class AraquariAccessController extends ChangeNotifier {
-  AraquariAccessController({AraquariCredentialVerifier? verifier})
-      : _verifier = verifier ?? _LocalCredentialVerifier.verify;
+  AraquariAccessController({AraquariAuthService? authService})
+      : _authService = authService ?? AraquariAuthService();
 
   static final instance = AraquariAccessController();
 
-  final AraquariCredentialVerifier _verifier;
-  bool _isTiMode = false;
+  final AraquariAuthService _authService;
+  AraquariAccessStatus _status = AraquariAccessStatus.signedOut;
+  AraquariSession? _session;
+  String? _auditWarning;
+  String? _lastAuthorizationError;
 
-  bool get isTiMode => _isTiMode;
+  AraquariAccessStatus get status => _status;
+  bool get isAuthenticating =>
+      _status == AraquariAccessStatus.authenticating;
+  bool get isTiMode =>
+      _status == AraquariAccessStatus.authenticated &&
+      _session != null &&
+      !_session!.isExpired;
+  AraquariUser? get currentUser => isTiMode ? _session!.user : null;
+  String? get auditWarning => _auditWarning;
+  String? get lastAuthorizationError => _lastAuthorizationError;
 
-  bool authenticate(String username, String password) {
-    final authenticated = _verifier(username.trim(), password);
-    if (authenticated != _isTiMode) {
-      _isTiMode = authenticated;
-      notifyListeners();
+  Future<AraquariAuthAttempt> authenticate(
+    String username,
+    String password,
+  ) async {
+    if (_status == AraquariAccessStatus.authenticating) {
+      return const AraquariAuthAttempt.failure(
+        AraquariAuthErrorKind.serviceUnavailable,
+      );
     }
-    return authenticated;
+    _status = AraquariAccessStatus.authenticating;
+    notifyListeners();
+    try {
+      final session = await _authService.login(username, password);
+      _session = session;
+      _status = AraquariAccessStatus.authenticated;
+      _auditWarning = null;
+      _lastAuthorizationError = null;
+      notifyListeners();
+      unawaited(_sendAudit(eventType: 'TI_MODE_STARTED', result: 'SUCCESS'));
+      return const AraquariAuthAttempt.success();
+    } on AraquariAuthException catch (error) {
+      _session = null;
+      _status = AraquariAccessStatus.signedOut;
+      notifyListeners();
+      return AraquariAuthAttempt.failure(error.kind);
+    }
   }
 
-  void logout() {
-    if (!_isTiMode) return;
-    _isTiMode = false;
+  Future<bool> ensureValidSession() async {
+    final session = _session;
+    if (session == null || _status != AraquariAccessStatus.authenticated) {
+      _setAuthorizationError(
+        'Entre no Modo TI para iniciar uma conexão remota.',
+      );
+      await _clearLocalSession(clearAuthorizationError: false);
+      return false;
+    }
+    if (session.isExpired) {
+      _setAuthorizationError(
+        'A sessão da TI expirou. Entre novamente para continuar.',
+      );
+      await _clearLocalSession(clearAuthorizationError: false);
+      return false;
+    }
+    final valid = await _authService.validate(session);
+    if (!valid) {
+      _setAuthorizationError(
+        'Não foi possível validar a sessão da TI no servidor.',
+      );
+      await _clearLocalSession(clearAuthorizationError: false);
+    }
+    return valid;
+  }
+
+  Future<String?> authorizeRemoteConnection(String targetRustDeskId) async {
+    _setAuthorizationError(null);
+    if (!await ensureValidSession()) return null;
+    final supportSessionId = Uuid().v4();
+    final audited = await _sendAudit(
+      eventType: 'REMOTE_CONNECTION_REQUESTED',
+      supportSessionId: supportSessionId,
+      clientDevice: AraquariDeviceIdentity(rustDeskId: targetRustDeskId),
+      result: 'REQUESTED',
+    );
+    if (!audited) {
+      _setAuthorizationError(
+        'A conexão foi bloqueada porque a auditoria está indisponível.',
+      );
+      return null;
+    }
+    return supportSessionId;
+  }
+
+  Future<void> remoteConnectionFailed(
+    String supportSessionId,
+    String targetRustDeskId,
+  ) async {
+    await _sendAudit(
+      eventType: 'REMOTE_CONNECTION_FAILED',
+      supportSessionId: supportSessionId,
+      clientDevice: AraquariDeviceIdentity(rustDeskId: targetRustDeskId),
+      result: 'FAILED_TO_OPEN',
+    );
+  }
+
+  Future<void> logout() async {
+    final session = _session;
+    await _clearLocalSession();
+    if (session != null && !session.isExpired) {
+      try {
+        await _authService.audit(
+          session,
+          eventType: 'TI_MODE_ENDED',
+          result: 'SUCCESS',
+        );
+      } catch (error) {
+        debugPrint('AraquariDesk TI logout audit error: $error');
+      }
+      await _authService.logout(session);
+    }
+  }
+
+  void _setAuthorizationError(String? value) {
+    if (_lastAuthorizationError == value) return;
+    _lastAuthorizationError = value;
     notifyListeners();
   }
-}
 
-class _LocalCredentialVerifier {
-  static const _usernameDigest = String.fromEnvironment(
-    'ARAQUARI_TI_USERNAME_SHA256',
-  );
-  static const _passwordDigest = String.fromEnvironment(
-    'ARAQUARI_TI_PASSWORD_SHA256',
-  );
-
-  static bool verify(String username, String password) {
-    if (_usernameDigest.isEmpty || _passwordDigest.isEmpty) return false;
-    final usernameDigest = sha256.convert(utf8.encode(username)).toString();
-    final passwordDigest = sha256.convert(utf8.encode(password)).toString();
-    final usernameMatches =
-        _constantTimeEquals(usernameDigest, _usernameDigest);
-    final passwordMatches =
-        _constantTimeEquals(passwordDigest, _passwordDigest);
-    return usernameMatches && passwordMatches;
+  Future<bool> _sendAudit({
+    required String eventType,
+    String? supportSessionId,
+    AraquariDeviceIdentity? clientDevice,
+    String? result,
+  }) async {
+    final session = _session;
+    if (session == null || session.isExpired) return false;
+    try {
+      await _authService.audit(
+        session,
+        eventType: eventType,
+        supportSessionId: supportSessionId,
+        clientDevice: clientDevice,
+        result: result,
+      );
+      if (_auditWarning != null) {
+        _auditWarning = null;
+        notifyListeners();
+      }
+      return true;
+    } catch (error) {
+      debugPrint('AraquariDesk audit error: $error');
+      _auditWarning = 'Falha ao registrar auditoria no servidor.';
+      notifyListeners();
+      return false;
+    }
   }
 
-  static bool _constantTimeEquals(String left, String right) {
-    if (left.length != right.length) return false;
-    var difference = 0;
-    for (var index = 0; index < left.length; index++) {
-      difference |= left.codeUnitAt(index) ^ right.codeUnitAt(index);
-    }
-    return difference == 0;
+  Future<void> _clearLocalSession({bool clearAuthorizationError = true}) async {
+    if (_session == null && _status == AraquariAccessStatus.signedOut) return;
+    _session = null;
+    _status = AraquariAccessStatus.signedOut;
+    _auditWarning = null;
+    if (clearAuthorizationError) _lastAuthorizationError = null;
+    notifyListeners();
   }
 }

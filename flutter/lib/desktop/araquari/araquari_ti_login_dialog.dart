@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/desktop/araquari/araquari_access_controller.dart';
+import 'package:flutter_hbb/desktop/araquari/araquari_auth_models.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 Future<bool> showAraquariTiLoginDialog(BuildContext context) async {
@@ -26,7 +27,8 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _passwordVisible = false;
-  bool _hasError = false;
+  bool _submitting = false;
+  AraquariAuthErrorKind? _errorKind;
 
   @override
   void dispose() {
@@ -35,17 +37,39 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
     super.dispose();
   }
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    final authenticated = AraquariAccessController.instance.authenticate(
+  Future<void> _submit() async {
+    if (_submitting || !_formKey.currentState!.validate()) return;
+    setState(() {
+      _submitting = true;
+      _errorKind = null;
+    });
+    final result = await AraquariAccessController.instance.authenticate(
       _usernameController.text,
       _passwordController.text,
     );
     _passwordController.clear();
-    if (authenticated) {
+    if (!mounted) return;
+    if (result.authenticated) {
       Navigator.of(context).pop(true);
     } else {
-      setState(() => _hasError = true);
+      setState(() {
+        _submitting = false;
+        _errorKind = result.errorKind;
+      });
+    }
+  }
+
+  String get _errorMessage {
+    switch (_errorKind) {
+      case AraquariAuthErrorKind.invalidCredentials:
+        return 'Usuário ou senha inválidos.';
+      case AraquariAuthErrorKind.rateLimited:
+        return 'Muitas tentativas. Aguarde antes de tentar novamente.';
+      case AraquariAuthErrorKind.serviceUnavailable:
+      case AraquariAuthErrorKind.invalidResponse:
+        return 'Não foi possível acessar o serviço de autenticação.';
+      case null:
+        return '';
     }
   }
 
@@ -108,7 +132,9 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
                         ? 'Informe o usuário.'
                         : null,
                     onChanged: (_) {
-                      if (_hasError) setState(() => _hasError = false);
+                      if (_errorKind != null) {
+                        setState(() => _errorKind = null);
+                      }
                     },
                   ),
                   const SizedBox(height: 14),
@@ -139,11 +165,13 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
                         ? 'Informe a senha.'
                         : null,
                     onChanged: (_) {
-                      if (_hasError) setState(() => _hasError = false);
+                      if (_errorKind != null) {
+                        setState(() => _errorKind = null);
+                      }
                     },
                     onFieldSubmitted: (_) => _submit(),
                   ),
-                  if (_hasError)
+                  if (_errorKind != null)
                     Container(
                       margin: const EdgeInsets.only(top: 14),
                       padding: const EdgeInsets.all(12),
@@ -162,8 +190,8 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
                             color: Theme.of(context).colorScheme.error,
                           ),
                           const SizedBox(width: 9),
-                          const Expanded(
-                            child: Text('Usuário ou senha inválidos.'),
+                          Expanded(
+                            child: Text(_errorMessage),
                           ),
                         ],
                       ),
@@ -176,13 +204,20 @@ class _AraquariTiLoginDialogState extends State<_AraquariTiLoginDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed:
+              _submitting ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancelar'),
         ),
         ElevatedButton.icon(
-          onPressed: _submit,
-          icon: const Icon(Icons.login, size: 18),
-          label: const Text('Entrar'),
+          onPressed: _submitting ? null : _submit,
+          icon: _submitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.login, size: 18),
+          label: Text(_submitting ? 'Validando...' : 'Entrar'),
         ),
       ],
     );

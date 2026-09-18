@@ -57,23 +57,14 @@ def system2(cmd):
         sys.exit(-1)
 
 
-def create_araquari_ti_dart_defines():
-    """Create a temporary Flutter defines file without printing its values."""
-    values = {
-        key: os.environ.get(key, '')
-        for key in (
-            'ARAQUARI_TI_USERNAME_SHA256',
-            'ARAQUARI_TI_PASSWORD_SHA256',
-        )
-    }
-    configured = [key for key, value in values.items() if value]
-    if configured and len(configured) != len(values):
-        raise Exception('Both Araquari TI credential digests must be configured')
-    if not configured:
+def create_araquari_dart_defines():
+    """Create Flutter configuration without embedding authentication secrets."""
+    api_url = os.environ.get('ARAQUARIDESK_API_URL', '').strip()
+    if not api_url:
         return None
-    for key, value in values.items():
-        if not re.fullmatch(r'[0-9a-fA-F]{64}', value):
-            raise Exception(f'{key} must be a SHA-256 digest')
+    if not api_url.startswith('https://') or '\n' in api_url or '\r' in api_url:
+        raise Exception('ARAQUARIDESK_API_URL must be a valid HTTPS URL')
+    values = {'ARAQUARIDESK_API_URL': api_url}
     with tempfile.NamedTemporaryFile(
             mode='w', suffix='.json', encoding='utf-8', delete=False) as fh:
         json.dump(values, fh)
@@ -958,7 +949,7 @@ def build_flutter_windows(version, features, skip_portable_pack):
             print("cargo build failed, please check rust source code.")
             exit(-1)
     os.chdir('flutter')
-    defines_path = create_araquari_ti_dart_defines()
+    defines_path = create_araquari_dart_defines()
     try:
         defines_arg = (f' --dart-define-from-file="{defines_path}"'
                        if defines_path else '')

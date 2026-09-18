@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
+import 'package:flutter_hbb/desktop/araquari/araquari_access_controller.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
@@ -2522,7 +2523,7 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
   return null;
 }
 
-connectMainDesktop(String id,
+Future<bool> connectMainDesktop(String id,
     {required bool isFileTransfer,
     required bool isViewCamera,
     required bool isTerminal,
@@ -2532,35 +2533,54 @@ connectMainDesktop(String id,
     String? password,
     String? connToken,
     bool? isSharedPassword}) async {
-  if (isFileTransfer) {
-    await rustDeskWinManager.newFileTransfer(id,
-        password: password,
-        isSharedPassword: isSharedPassword,
-        connToken: connToken,
-        forceRelay: forceRelay);
-  } else if (isViewCamera) {
-    await rustDeskWinManager.newViewCamera(id,
-        password: password,
-        isSharedPassword: isSharedPassword,
-        connToken: connToken,
-        forceRelay: forceRelay);
-  } else if (isTcpTunneling || isRDP) {
-    await rustDeskWinManager.newPortForward(id, isRDP,
-        password: password,
-        isSharedPassword: isSharedPassword,
-        connToken: connToken,
-        forceRelay: forceRelay);
-  } else if (isTerminal) {
-    await rustDeskWinManager.newTerminal(id,
-        password: password,
-        isSharedPassword: isSharedPassword,
-        connToken: connToken,
-        forceRelay: forceRelay);
-  } else {
-    await rustDeskWinManager.newRemoteDesktop(id,
-        password: password,
-        isSharedPassword: isSharedPassword,
-        forceRelay: forceRelay);
+  final supportSessionId = await AraquariAccessController.instance
+      .authorizeRemoteConnection(id);
+  if (supportSessionId == null) {
+    showToast(
+      AraquariAccessController.instance.lastAuthorizationError ??
+          'A conexão remota não foi autorizada.',
+    );
+    return false;
+  }
+  try {
+    if (isFileTransfer) {
+      await rustDeskWinManager.newFileTransfer(id,
+          password: password,
+          isSharedPassword: isSharedPassword,
+          connToken: connToken,
+          forceRelay: forceRelay);
+    } else if (isViewCamera) {
+      await rustDeskWinManager.newViewCamera(id,
+          password: password,
+          isSharedPassword: isSharedPassword,
+          connToken: connToken,
+          forceRelay: forceRelay);
+    } else if (isTcpTunneling || isRDP) {
+      await rustDeskWinManager.newPortForward(id, isRDP,
+          password: password,
+          isSharedPassword: isSharedPassword,
+          connToken: connToken,
+          forceRelay: forceRelay);
+    } else if (isTerminal) {
+      await rustDeskWinManager.newTerminal(id,
+          password: password,
+          isSharedPassword: isSharedPassword,
+          connToken: connToken,
+          forceRelay: forceRelay);
+    } else {
+      await rustDeskWinManager.newRemoteDesktop(id,
+          password: password,
+          isSharedPassword: isSharedPassword,
+          forceRelay: forceRelay);
+    }
+    return true;
+  } catch (error) {
+    await AraquariAccessController.instance.remoteConnectionFailed(
+      supportSessionId,
+      id,
+    );
+    debugPrint('AraquariDesk failed to open remote connection: $error');
+    return false;
   }
 }
 
