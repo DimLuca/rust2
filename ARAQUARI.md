@@ -55,3 +55,74 @@ Sem certificado, o workflow informa claramente que os pacotes estão sem
 assinatura. Nenhuma proteção do Windows é desativada. A remoção consistente dos
 alertas do SmartScreen depende de certificado confiável, timestamp e reputação
 do editor.
+
+## Download bloqueado no Windows Defender (sem certificado)
+
+Em PC limpo e fora da rede, o Defender/SmartScreen pode **apagar ou recusar o
+download** do instalador branco `.msi`/`.exe`. Isso não é, por si só, sinal de
+malware no código: desktop remoto sem assinatura e sem reputação entra na mesma
+classe de heurística que RATs.
+
+Por que “antes funcionava e depois parou”: builds oficiais do RustDesk (ou
+versões anteriores com outro hash) acumulavam reputação na nuvem da Microsoft.
+Cada build novo do fork gera um hash desconhecido; depois do rebrand e dos
+ajustes, o Windows passou a tratar o pacote como arquivo novo de risco.
+
+### Canal de entrega sem pagar certificado
+
+Cada release do Windows publica, além do `.msi` e do `.exe` portátil:
+
+| Artefato | Uso |
+|----------|-----|
+| `AraquariDesk-<versão>-<arch>.7z` | **Canal preferencial** em PC limpo: pacote com senha |
+| `AraquariDesk-<versão>-<arch>.msi` | Instalação institucional (rede interna / GPO) |
+| `SHA256SUMS-<arch>.txt` | Conferência de integridade pela TI |
+| `AraquariDesk-Setup-*.exe` | Evitar em PC limpo (self-extractor gera mais bloqueio) |
+
+Senha do `.7z`: segredo `ARAQUARIDESK_DIST_ZIP_PASSWORD` no GitHub. Se o
+segredo não existir, o pipeline usa `AraquariDesk-TI`. A senha é só para
+descompactar após o download; não substitui assinatura Authenticode.
+
+Arquivo protegido por senha (cabeçalho 7z criptografado com `-mhe=on`) costuma
+passar no download mesmo quando o Defender apagaria o `.msi` nu.
+
+### Procedimento da TI quando o download for bloqueado
+
+1. Baixar o `.7z` (não o `.exe` Setup) da release e, se possível, o
+   `SHA256SUMS-<arch>.txt`.
+2. Se o navegador bloquear, copiar o link e baixar com PowerShell:
+
+   ```powershell
+   Invoke-WebRequest -Uri '<url-do-7z>' -OutFile 'AraquariDesk.7z'
+   ```
+
+3. Descompactar com 7-Zip usando a senha da TI.
+4. Conferir o hash:
+
+   ```powershell
+   Get-FileHash -Algorithm SHA256 .\AraquariDesk-*.msi
+   ```
+
+5. Instalar o `.msi`. A tela do SmartScreen na execução (“Mais informações →
+   Executar assim mesmo”) é esperada sem certificado; o bloqueio **durante o
+   download** é o que o `.7z` resolve.
+6. Se ainda assim o arquivo sumir após o download, **não desativar o Defender
+   inteiro**. Em máquina de teste, desligar só:
+   - Proteção em tempo real;
+   - Bloqueio de aplicativos potencialmente indesejados (PUA);
+   - Proteção baseada em nuvem.
+   Depois reinstalar e religar as opções.
+7. A cada release, submeter o `.msi`/`.7z` ao portal gratuito da Microsoft:
+   <https://www.microsoft.com/wdsi/filesubmission>. Isso reduz bloqueios nos
+   próximos PCs limpos **sem comprar certificado**.
+8. Alternativa de campo: gravar o `.7z` + `SHA256SUMS` em USB e instalar offline,
+   evitando o caminho do navegador.
+
+### Preferências de empacotagem
+
+- Para estações da Prefeitura, distribuir o **MSI** (direto ou de dentro do
+  `.7z`), de preferência por share interno/GPO quando o PC estiver na rede.
+- Publicar também o `.7z` no portal institucional em
+  `jiraiya.araquari.sc.gov.br`, além da release do GitHub — domínio próprio
+  tem reputação diferente de anexos de release pública.
+- Não usar desativação permanente do antivírus como procedimento padrão.

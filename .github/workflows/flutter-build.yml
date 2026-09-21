@@ -60,6 +60,8 @@ env:
   WINDOWS_CODESIGN_PFX_BASE64: "${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}"
   WINDOWS_CODESIGN_PFX_PASSWORD: "${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}"
   WINDOWS_CODESIGN_TIMESTAMP_URL: "${{ vars.WINDOWS_CODESIGN_TIMESTAMP_URL || 'http://timestamp.digicert.com' }}"
+  # Unpacking password for the Defender-safe .7z MSI package (TI-facing only).
+  ARAQUARIDESK_DIST_ZIP_PASSWORD: "${{ secrets.ARAQUARIDESK_DIST_ZIP_PASSWORD || 'AraquariDesk-TI' }}"
 
 jobs:
   generate-sbom:
@@ -496,6 +498,47 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($_.Name)" }
           }
 
+      # Password-protected 7z keeps Defender/SmartScreen from deleting the MSI
+      # during download on clean offline PCs. The archive password is an
+      # unpacking channel for TI, not a product secret.
+      - name: Package MSI for Defender-safe download
+        if: env.UPLOAD_ARTIFACT == 'true'
+        shell: pwsh
+        env:
+          ARAQUARIDESK_DIST_ZIP_PASSWORD: "${{ secrets.ARAQUARIDESK_DIST_ZIP_PASSWORD || 'AraquariDesk-TI' }}"
+        run: |
+          $password = $env:ARAQUARIDESK_DIST_ZIP_PASSWORD
+          if ([string]::IsNullOrWhiteSpace($password)) {
+            throw 'ARAQUARIDESK_DIST_ZIP_PASSWORD is empty.'
+          }
+          $7z = (Get-Command 7z -ErrorAction SilentlyContinue)?.Source
+          if (-not $7z) {
+            $7z = @(
+              (Join-Path $env:ProgramFiles '7-Zip\7z.exe'),
+              (Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe')
+            ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          }
+          if (-not $7z) {
+            throw '7z.exe not found on the Windows runner.'
+          }
+          $outDir = './SignOutput'
+          $msiFiles = @(Get-ChildItem -Path $outDir -Filter 'AraquariDesk-*.msi' -ErrorAction SilentlyContinue)
+          if ($msiFiles.Count -eq 0) {
+            throw 'No AraquariDesk MSI found in SignOutput.'
+          }
+          foreach ($msi in $msiFiles) {
+            $archivePath = Join-Path $outDir ($msi.BaseName + '.7z')
+            & $7z a -t7z -mhe=on "-p$password" $archivePath $msi.FullName
+            if ($LASTEXITCODE -ne 0) { throw "7z failed for $($msi.Name)" }
+          }
+          $sums = Get-ChildItem -Path $outDir -File | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+            "{0}  {1}" -f $hash, $_.Name
+          }
+          $sumsPath = Join-Path $outDir "SHA256SUMS-${{ matrix.job.arch }}.txt"
+          $sums | Set-Content -Path $sumsPath -Encoding ascii
+          Get-Content $sumsPath
+
       - name: Publish Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -505,6 +548,8 @@ jobs:
           files: |
             ./SignOutput/AraquariDesk-*.msi
             ./SignOutput/AraquariDesk-*.exe
+            ./SignOutput/AraquariDesk-*.7z
+            ./SignOutput/SHA256SUMS-*.txt
 
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
   build-for-windows-sciter:
