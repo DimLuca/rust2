@@ -68,61 +68,52 @@ versões anteriores com outro hash) acumulavam reputação na nuvem da Microsoft
 Cada build novo do fork gera um hash desconhecido; depois do rebrand e dos
 ajustes, o Windows passou a tratar o pacote como arquivo novo de risco.
 
-### Canal de entrega sem pagar certificado
+### Canais de entrega (sem certificado pago)
 
-Cada release do Windows publica, além do `.msi` e do `.exe` portátil:
+Muitos PCs **não passam pela TI**. O canal principal é o que o usuário final
+recebe e abre **sem administrador**.
 
-| Artefato | Uso |
-|----------|-----|
-| `AraquariDesk-<versão>-<arch>.7z` | **Canal preferencial** em PC limpo: pacote com senha |
-| `AraquariDesk-<versão>-<arch>.msi` | Instalação institucional (rede interna / GPO) |
-| `SHA256SUMS-<arch>.txt` | Conferência de integridade pela TI |
-| `AraquariDesk-Setup-*.exe` | Evitar em PC limpo (self-extractor gera mais bloqueio) |
+| Artefato | Para quem | Admin? | Uso |
+|----------|-----------|--------|-----|
+| **`AraquariDesk-portavel-<versão>-<arch>.zip`** | Usuário final | **Não** | **Canal principal (WhatsApp)** |
+| `AraquariDesk-Setup-*.exe` | Usuário final | **Não** (extrai e roda em modo Usuário) | Alternativa em arquivo único |
+| `AraquariDesk-<versão>-<arch>.msi` | TI / GPO | Sim | Instalação permanente + serviço |
+| `AraquariDesk-<versão>-<arch>.7z` | TI | Não para extrair | Fallback se o Defender apagar o download do zip/msi |
+| `SHA256SUMS-<arch>.txt` | TI | — | Conferência de hash |
 
-Senha do `.7z`: segredo `ARAQUARIDESK_DIST_ZIP_PASSWORD` no GitHub. Se o
-segredo não existir, o pipeline usa `AraquariDesk-TI`. A senha é só para
-descompactar após o download; não substitui assinatura Authenticode.
+#### Fluxo WhatsApp / campo (sem admin)
 
-Arquivo protegido por senha (cabeçalho 7z criptografado com `-mhe=on`) costuma
-passar no download mesmo quando o Defender apagaria o `.msi` nu.
+1. Enviar o **`AraquariDesk-portavel-*.zip`** (ou o `Setup-*.exe`) pelo WhatsApp.
+2. No PC do usuário: **Extrair tudo** no ZIP do Windows (sem senha, sem admin).
+3. Abrir `AraquariDesk.exe` / `rustdesk.exe`.
+4. SmartScreen: **Mais informações → Executar assim mesmo**.
+5. Modo Usuário: passar o **ID** da tela para o técnico e **aceitar** a conexão.
 
-### Procedimento da TI quando o download for bloqueado
+O ZIP inclui `COMO-USAR.txt` com esse passo a passo.
 
-1. Baixar o `.7z` (não o `.exe` Setup) da release e, se possível, o
-   `SHA256SUMS-<arch>.txt`.
-2. Se o navegador bloquear, copiar o link e baixar com PowerShell:
+Isso cobre **suporte assistido** (app aberto, usuário aceita). **Não** cobre
+acesso desatendido permanente: serviço/MSI continuam sendo da TI, com admin.
+
+#### Se o Defender apagar o download
+
+1. Preferir o `.zip` em vez do `.exe` (ZIP costuma passar mais).
+2. Baixar via PowerShell se o navegador bloquear:
 
    ```powershell
-   Invoke-WebRequest -Uri '<url-do-7z>' -OutFile 'AraquariDesk.7z'
+   Invoke-WebRequest -Uri '<url-do-zip>' -OutFile 'AraquariDesk-portavel.zip'
    ```
 
-3. Descompactar com 7-Zip usando a senha da TI.
-4. Conferir o hash:
+3. Fallback TI: `.7z` com senha `AraquariDesk-TI` (segredo
+   `ARAQUARIDESK_DIST_ZIP_PASSWORD` no GitHub).
+4. **Não** desativar o Defender inteiro. Em teste, desligar só tempo real / PUA
+   / nuvem, extrair e religar.
+5. A cada release, submeter o `.zip`/`.msi` ao portal gratuito da Microsoft:
+   <https://www.microsoft.com/wdsi/filesubmission>.
+6. Hospedar o `.zip` também em `jiraiya.araquari.sc.gov.br` e mandar esse link
+   quando o WhatsApp/GitHub bloquear.
 
-   ```powershell
-   Get-FileHash -Algorithm SHA256 .\AraquariDesk-*.msi
-   ```
+#### Preferências
 
-5. Instalar o `.msi`. A tela do SmartScreen na execução (“Mais informações →
-   Executar assim mesmo”) é esperada sem certificado; o bloqueio **durante o
-   download** é o que o `.7z` resolve.
-6. Se ainda assim o arquivo sumir após o download, **não desativar o Defender
-   inteiro**. Em máquina de teste, desligar só:
-   - Proteção em tempo real;
-   - Bloqueio de aplicativos potencialmente indesejados (PUA);
-   - Proteção baseada em nuvem.
-   Depois reinstalar e religar as opções.
-7. A cada release, submeter o `.msi`/`.7z` ao portal gratuito da Microsoft:
-   <https://www.microsoft.com/wdsi/filesubmission>. Isso reduz bloqueios nos
-   próximos PCs limpos **sem comprar certificado**.
-8. Alternativa de campo: gravar o `.7z` + `SHA256SUMS` em USB e instalar offline,
-   evitando o caminho do navegador.
-
-### Preferências de empacotagem
-
-- Para estações da Prefeitura, distribuir o **MSI** (direto ou de dentro do
-  `.7z`), de preferência por share interno/GPO quando o PC estiver na rede.
-- Publicar também o `.7z` no portal institucional em
-  `jiraiya.araquari.sc.gov.br`, além da release do GitHub — domínio próprio
-  tem reputação diferente de anexos de release pública.
+- **Usuário final / WhatsApp:** portátil `.zip` (ou Setup exe) — sem admin.
+- **Estações da TI / GPO:** MSI (precisa admin) — não é o canal de campo.
 - Não usar desativação permanente do antivírus como procedimento padrão.

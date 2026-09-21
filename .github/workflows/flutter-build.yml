@@ -498,9 +498,46 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($_.Name)" }
           }
 
-      # Password-protected 7z keeps Defender/SmartScreen from deleting the MSI
-      # during download on clean offline PCs. The archive password is an
-      # unpacking channel for TI, not a product secret.
+      # WhatsApp / field channel: plain ZIP + portable folder. No password, no
+      # admin to extract or run in User mode (attended support). MSI stays for
+      # TI/GPO; password-protected 7z remains a download-block fallback only.
+      - name: Package portable ZIP for WhatsApp (no admin)
+        if: env.UPLOAD_ARTIFACT == 'true'
+        shell: pwsh
+        run: |
+          $outDir = './SignOutput'
+          $arch = '${{ matrix.job.arch }}'
+          $version = $env:VERSION
+          if (-not (Test-Path './rustdesk')) {
+            throw './rustdesk app folder not found for portable ZIP.'
+          }
+          $stageRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+          $stage = Join-Path $stageRoot 'AraquariDesk-portavel'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path './rustdesk/*' -Destination $stage -Recurse -Force
+          $readme = @"
+          AraquariDesk - suporte remoto (sem administrador)
+
+          1. Extraia esta pasta para a area de trabalho (clique duplo no ZIP
+             do Windows ou botao direito > Extrair tudo). Nao precisa de senha
+             nem de administrador.
+          2. Abra a pasta e execute AraquariDesk.exe (ou rustdesk.exe).
+          3. Se o Windows SmartScreen aparecer, clique em Mais informacoes >
+             Executar assim mesmo.
+          4. No modo Usuario, informe o ID mostrado na tela ao tecnico e
+             aceite a conexao.
+
+          Obs.: instalacao MSI / servico permanente continua sendo papel da TI
+          (precisa de administrador). Este ZIP e para receber suporte com o
+          aplicativo aberto.
+          "@
+          Set-Content -Path (Join-Path $stage 'COMO-USAR.txt') -Value $readme -Encoding utf8
+          $zipPath = Join-Path $outDir "AraquariDesk-portavel-$version-$arch.zip"
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          Compress-Archive -Path $stage -DestinationPath $zipPath -CompressionLevel Optimal
+          Write-Host "Portable ZIP: $zipPath ($((Get-Item $zipPath).Length) bytes)"
+
       - name: Package MSI for Defender-safe download
         if: env.UPLOAD_ARTIFACT == 'true'
         shell: pwsh
@@ -546,6 +583,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
+            ./SignOutput/AraquariDesk-portavel-*.zip
             ./SignOutput/AraquariDesk-*.msi
             ./SignOutput/AraquariDesk-*.exe
             ./SignOutput/AraquariDesk-*.7z
