@@ -9,6 +9,13 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+-[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-[0-9]+'
 
+# Reusable flutter-build jobs publish GitHub Releases and need write access.
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  id-token: write
+
 jobs:
   run-flutter-tag-build:
     uses: ./.github/workflows/flutter-build.yml

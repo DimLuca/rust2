@@ -235,9 +235,10 @@ webrtc-util = { git = "https://github.com/rustdesk-org/webrtc", rev = "db3b07a9d
 webrtc-sctp = { git = "https://github.com/rustdesk-org/webrtc", rev = "db3b07a9dd8f195916c89c2e62a8911402b11d27" }
 
 [package.metadata.winres]
-LegalCopyright = "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved."
-ProductName = "RustDesk"
-FileDescription = "RustDesk Remote Desktop"
+CompanyName = "Prefeitura Municipal de Araquari"
+LegalCopyright = "Copyright © 2026 Prefeitura Municipal de Araquari"
+ProductName = "AraquariDesk"
+FileDescription = "AraquariDesk - Suporte Remoto"
 OriginalFilename = "rustdesk.exe"
 
 [target.'cfg(target_os="windows")'.build-dependencies]
