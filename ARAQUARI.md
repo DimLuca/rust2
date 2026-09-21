@@ -10,7 +10,19 @@ Prefeitura na inicialização do cliente.
 - chave pública do servidor: incorporada em `src/araquari.rs`;
 - cor principal: azul institucional `#27457E`;
 - logos para temas claro e escuro e ícones dos pacotes: derivados da identidade
-  visual fornecida pela Prefeitura, sem os elementos vermelhos.
+  visual fornecida pela Prefeitura, sem os elementos vermelhos;
+- metadados PE (ProductName / CompanyName / FileDescription / copyright):
+  `AraquariDesk` e `Prefeitura Municipal de Araquari` em binário Rust, packer
+  portátil, runner Flutter e MSI (`preprocess.py --app-name AraquariDesk`).
+
+### Produto principal de distribuição
+
+O artefato para o **usuário final** é o portátil **sem administrador**:
+
+`AraquariDesk-portavel-<versão>-<arch>.zip` → extrair → `AraquariDesk.exe`.
+
+MSI e `Setup.exe` são canais da TI (podem exigir admin). O `.7z` com senha é
+apenas fallback quando o Defender apaga o download.
 
 O mesmo domínio atende os usuários internos e externos por DNS dividido:
 

@@ -425,7 +425,10 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           pushd ./res/msi
-          python preprocess.py --arp -d ../../rustdesk
+          if (Test-Path ../../rustdesk/rustdesk.exe) {
+            Copy-Item ../../rustdesk/rustdesk.exe ../../rustdesk/AraquariDesk.exe -Force
+          }
+          python preprocess.py --arp -d ../../rustdesk --app-name AraquariDesk --manufacturer "Prefeitura Municipal de Araquari"
           nuget restore msi.sln
           $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
           msbuild msi.sln -p:Configuration=Release -p:Platform=$msiPlatform /p:TargetVersion=Windows10
@@ -516,27 +519,29 @@ jobs:
           if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item -Path './rustdesk/*' -Destination $stage -Recurse -Force
+          if (Test-Path (Join-Path $stage 'rustdesk.exe')) {
+            Move-Item (Join-Path $stage 'rustdesk.exe') (Join-Path $stage 'AraquariDesk.exe') -Force
+          }
           $readme = @"
           AraquariDesk - suporte remoto (sem administrador)
 
-          1. Extraia esta pasta para a area de trabalho (clique duplo no ZIP
-             do Windows ou botao direito > Extrair tudo). Nao precisa de senha
-             nem de administrador.
-          2. Abra a pasta e execute AraquariDesk.exe (ou rustdesk.exe).
+          PRODUTO PRINCIPAL PARA O USUARIO FINAL (WhatsApp / campo)
+
+          1. Extraia esta pasta para a area de trabalho (botao direito no ZIP >
+             Extrair tudo). Nao precisa de senha nem de administrador.
+          2. Abra a pasta e execute AraquariDesk.exe.
           3. Se o Windows SmartScreen aparecer, clique em Mais informacoes >
              Executar assim mesmo.
-          4. No modo Usuario, informe o ID mostrado na tela ao tecnico e
-             aceite a conexao.
+          4. No modo Usuario, informe o ID da tela ao tecnico e aceite a conexao.
 
-          Obs.: instalacao MSI / servico permanente continua sendo papel da TI
-          (precisa de administrador). Este ZIP e para receber suporte com o
-          aplicativo aberto.
+          MSI e Setup.exe sao instalacao da TI (podem pedir administrador).
+          Este ZIP e para receber suporte com o aplicativo aberto.
           "@
           Set-Content -Path (Join-Path $stage 'COMO-USAR.txt') -Value $readme -Encoding utf8
           $zipPath = Join-Path $outDir "AraquariDesk-portavel-$version-$arch.zip"
           if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
           Compress-Archive -Path $stage -DestinationPath $zipPath -CompressionLevel Optimal
-          Write-Host "Portable ZIP: $zipPath ($((Get-Item $zipPath).Length) bytes)"
+          Write-Host "Portable ZIP (produto principal): $zipPath ($((Get-Item $zipPath).Length) bytes)"
 
       - name: Package MSI for Defender-safe download
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -582,6 +587,16 @@ jobs:
         with:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
+          body: |
+            ## AraquariDesk Windows
+
+            **Produto principal (usuário final, sem admin):**
+            `AraquariDesk-portavel-<versão>-<arch>.zip` — extrair e abrir `AraquariDesk.exe`.
+
+            **TI / GPO (precisa admin):** MSI.
+            **Fallback se o Defender apagar o download:** `.7z` com senha (padrão `AraquariDesk-TI`).
+
+            Metadados PE: ProductName/Company = AraquariDesk / Prefeitura Municipal de Araquari.
           files: |
             ./SignOutput/AraquariDesk-portavel-*.zip
             ./SignOutput/AraquariDesk-*.msi
